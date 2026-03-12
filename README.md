@@ -17,16 +17,60 @@ Se incluye `signal_engine.py` con este flujo real:
 ### Ejecución una vez
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
+cp .env.example .env
+# edita .env con tu api key y (opcional) ruta de DB
+set -a; source .env; set +a
 python signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
 ```
 
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
+set -a; source .env; set +a
 python signal_engine.py --input example_payload.json --db signals.db --analysis-every-minutes 15 --review-every-minutes 1 --model gpt-5-mini
 ```
+
+### Variables de entorno (`.env`)
+
+`signal_engine.py` intenta cargar automáticamente un archivo `.env` (si está instalado `python-dotenv`).
+
+Variables soportadas:
+
+- `OPENAI_API_KEY` (requerida)
+- `SIGNALS_DB_PATH` (opcional, default `signals.db`)
+
+Para ejecución real en MT5 (opcional):
+
+- `MT5_LOGIN`
+- `MT5_PASSWORD`
+- `MT5_SERVER`
+- `MT5_PATH` (opcional)
+- `MT5_VOLUME` (opcional, default `0.01`)
+- `MT5_MAGIC` (opcional)
+- `MT5_DEVIATION` (opcional)
+
+> Todas estas variables se leen en Python con `os.getenv(...)` al iniciar el script.
+
+### Ejecución real en MT5
+
+> Si usas `--execute-real-mt5`, el script **exige login/password/server** y hace login en MT5 antes de enviar MARKET orders.
+> Para este modo necesitas instalar `MetaTrader5` y tener la terminal abierta/sesión permitida para trading.
+
+```bash
+pip install MetaTrader5
+```
+
+```bash
+set -a; source .env; set +a
+python signal_engine.py \
+  --input example_payload.json \
+  --once \
+  --execute-real-mt5 \
+  --mt5-server "$MT5_SERVER" \
+  --mt5-path "$MT5_PATH"
+```
+
+El envío de orden real se hace como `TRADE_ACTION_DEAL` con `ORDER_TYPE_BUY`/`ORDER_TYPE_SELL` (market), no pending orders.
 
 ### Persistencia en SQLite
 
