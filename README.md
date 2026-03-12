@@ -31,6 +31,31 @@ REM edita .env y agrega OPENAI_API_KEY=tu_api_key
 py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
 ```
 
+Si defines todo en `.env`, puedes correr solo:
+
+```bat
+py signal_engine.py
+```
+
+Para ver trazas detalladas de todo el flujo (debug):
+
+```bat
+py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once --debug
+```
+
+Con `--debug` verás detalles de: carga de `.env`, parámetros de arranque, normalización de setups IA, decisiones de activación, guardado en DB y (si aplica) envío a MT5.
+
+### Modo portable (mover carpeta sin romper rutas)
+
+El script ahora resuelve rutas relativas respecto al directorio donde está `signal_engine.py` (no respecto al directorio actual de la consola):
+
+- `--input example_payload.json`
+- `--db signals.db`
+- `--output signal.json`
+- archivo `.env`
+
+Así puedes mover toda la carpeta del proyecto a otro disco/ruta y seguirá encontrando archivos relativos correctamente.
+
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
@@ -45,6 +70,14 @@ python signal_engine.py --input example_payload.json --db signals.db --analysis-
 Variables soportadas:
 
 - `OPENAI_API_KEY` (requerida)
+- `OPENAI_MODEL` (opcional, default `gpt-5-mini`)
+- `INPUT_JSON_PATH` (opcional, reemplaza `--input`)
+- `OUTPUT_JSON_PATH` (opcional, reemplaza `--output`)
+- `ANALYSIS_EVERY_MINUTES` (opcional, reemplaza `--analysis-every-minutes`)
+- `REVIEW_EVERY_MINUTES` (opcional, reemplaza `--review-every-minutes`)
+- `RUN_ONCE` (opcional, `true/false`, reemplaza `--once`)
+- `DEBUG` (opcional, `true/false`, reemplaza `--debug`)
+- `EXECUTE_REAL_MT5` (opcional, `true/false`, reemplaza `--execute-real-mt5`)
 - `SIGNALS_DB_PATH` (opcional, default `signals.db`)
 
 Para ejecución real en MT5 (opcional):
