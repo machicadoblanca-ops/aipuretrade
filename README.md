@@ -49,6 +49,8 @@ Para ejecución real en MT5 (opcional):
 - `MT5_MAGIC` (opcional)
 - `MT5_DEVIATION` (opcional)
 
+> Todas estas variables se leen en Python con `os.getenv(...)` al iniciar el script.
+
 ### Ejecución real en MT5
 
 > Si usas `--execute-real-mt5`, el script **exige login/password/server** y hace login en MT5 antes de enviar MARKET orders.
