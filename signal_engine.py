@@ -283,21 +283,34 @@ def generate_signal(payload: Dict[str, Any], model: str) -> Dict[str, Any]:
     from openai import OpenAI  # lazy import para permitir tests sin dependencia instalada
 
     client = OpenAI(api_key=api_key)
-    response = client.responses.create(
-        model=model,
-        input=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    "Analiza y genera setups para este payload. "
-                    "Responde estrictamente con JSON válido, sin markdown ni texto adicional:\n"
-                    + json.dumps(payload, ensure_ascii=False)
-                ),
-            },
-        ],
+    user_prompt = (
+        "Analiza y genera setups para este payload. "
+        "Responde estrictamente con JSON válido, sin markdown ni texto adicional:\n"
+        + json.dumps(payload, ensure_ascii=False)
     )
-    output_text = str(getattr(response, "output_text", "") or "").strip()
+
+    output_text = ""
+    try:
+        response = client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        output_text = str(getattr(response, "output_text", "") or "").strip()
+    except Exception:
+        # Compatibilidad con SDK antiguos que no soportan Responses API.
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0,
+        )
+        output_text = str((completion.choices[0].message.content if completion.choices else "") or "").strip()
+
     if not output_text:
         raise RuntimeError("La API devolvió respuesta vacía.")
 

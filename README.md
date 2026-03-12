@@ -107,7 +107,7 @@ py signal_engine.py --input example_payload.json --once --execute-real-mt5 --mt5
 
 ### Error común: `Responses.create() got an unexpected keyword argument 'response_format'`
 
-Ese error viene de una diferencia de versiones del SDK de OpenAI. El script ya está preparado para funcionar sin `response_format` y parsear JSON de forma compatible.
+Ese error viene de una diferencia de versiones del SDK de OpenAI. El script ya está preparado para funcionar sin `response_format`, parsear JSON de forma compatible y, si `responses` no está disponible, usar fallback a `chat.completions`.
 
 Recomendado:
 
