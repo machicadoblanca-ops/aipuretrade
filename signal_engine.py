@@ -30,6 +30,18 @@ def _debug(msg: str) -> None:
     if DEBUG:
         print(f"[DEBUG {_utc_now()}] {msg}")
 
+
+def _script_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def _resolve_path(path_value: str) -> str:
+    """Resuelve rutas relativas contra el directorio del script (modo portable)."""
+    path = Path(path_value)
+    if path.is_absolute():
+        return str(path)
+    return str((_script_dir() / path).resolve())
+
 SYSTEM_PROMPT = """
 Eres un motor de trading cuantitativo para MetaTrader (MT4/MT5).
 Analiza payload multi-timeframe (m15, h4, d1) con SMC, tipos de velas,
@@ -91,15 +103,18 @@ ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "l
 
 def _load_dotenv_if_available() -> None:
     """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
+    dotenv_script = _script_dir() / ".env"
+    dotenv_cwd = Path(".env").resolve()
+    dotenv_target = dotenv_script if dotenv_script.exists() else dotenv_cwd
+
     try:
         from dotenv import load_dotenv  # type: ignore
     except ImportError:
         _debug("python-dotenv no disponible; intentando parser interno de .env")
-        dotenv_path = ".env"
-        if not os.path.exists(dotenv_path):
+        if not dotenv_target.exists():
             _debug("No existe archivo .env; continúo con variables de entorno del sistema")
             return
-        with open(dotenv_path, "r", encoding="utf-8") as f:
+        with open(dotenv_target, "r", encoding="utf-8") as f:
             for raw_line in f:
                 line = raw_line.strip()
                 if not line or line.startswith("#") or "=" not in line:
@@ -109,10 +124,10 @@ def _load_dotenv_if_available() -> None:
                 value = value.strip().strip('"').strip("'")
                 if key and key not in os.environ:
                     os.environ[key] = value
-        _debug(".env cargado con parser interno")
+        _debug(f".env cargado con parser interno desde {dotenv_target}")
         return
-    load_dotenv()
-    _debug(".env cargado con python-dotenv")
+    load_dotenv(dotenv_path=dotenv_target)
+    _debug(f".env cargado con python-dotenv desde {dotenv_target}")
 
 
 def _utc_now() -> str:
@@ -683,9 +698,14 @@ def main() -> None:
     parser.add_argument("--mt5-deviation", type=int, default=int(os.getenv("MT5_DEVIATION", "20")), help="Desviación de precio")
     args = parser.parse_args()
     DEBUG = bool(args.debug)
+
+    input_path = _resolve_path(args.input)
+    db_path = _resolve_path(args.db)
+    output_path = _resolve_path(args.output) if args.output else None
+
     _debug("Modo DEBUG activado")
     _debug(
-        f"Parámetros: input={args.input}, db={args.db}, model={args.model}, once={args.once}, "
+        f"Parámetros: input={input_path}, db={db_path}, model={args.model}, once={args.once}, "
         f"analysis_every={args.analysis_every_minutes}, review_every={args.review_every_minutes}, "
         f"execute_real_mt5={args.execute_real_mt5}"
     )
@@ -704,7 +724,7 @@ def main() -> None:
     last_analysis_ts = 0.0
     while True:
         now_ts = time.time()
-        payload = _load_json(args.input)
+        payload = _load_json(input_path)
         _debug(f"Loop continuo: now_ts={now_ts}, last_analysis_ts={last_analysis_ts}")
 
         # 1) Análisis IA cada N minutos (default 15)
