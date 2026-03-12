@@ -81,10 +81,23 @@ ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "l
 
 
 def _load_dotenv_if_available() -> None:
-    """Carga .env si python-dotenv está instalado (opcional)."""
+    """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
     try:
         from dotenv import load_dotenv  # type: ignore
     except ImportError:
+        dotenv_path = ".env"
+        if not os.path.exists(dotenv_path):
+            return
+        with open(dotenv_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
         return
     load_dotenv()
 
@@ -262,7 +275,10 @@ def validate_and_normalize(result: Dict[str, Any], symbol: str) -> Dict[str, Any
 def generate_signal(payload: Dict[str, Any], model: str) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("Falta OPENAI_API_KEY en variables de entorno.")
+        raise RuntimeError(
+            "Falta OPENAI_API_KEY en variables de entorno. "
+            "Configúrala en .env (OPENAI_API_KEY=...) o en Windows CMD: set OPENAI_API_KEY=tu_api_key"
+        )
 
     from openai import OpenAI  # lazy import para permitir tests sin dependencia instalada
 
@@ -271,11 +287,30 @@ def generate_signal(payload: Dict[str, Any], model: str) -> Dict[str, Any]:
         model=model,
         input=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "Analiza y genera setups para este payload:\n" + json.dumps(payload, ensure_ascii=False)},
+            {
+                "role": "user",
+                "content": (
+                    "Analiza y genera setups para este payload. "
+                    "Responde estrictamente con JSON válido, sin markdown ni texto adicional:\n"
+                    + json.dumps(payload, ensure_ascii=False)
+                ),
+            },
         ],
-        response_format={"type": "json_object"},
     )
-    parsed = json.loads(response.output_text)
+    output_text = str(getattr(response, "output_text", "") or "").strip()
+    if not output_text:
+        raise RuntimeError("La API devolvió respuesta vacía.")
+
+    try:
+        parsed = json.loads(output_text)
+    except json.JSONDecodeError:
+        # Compatibilidad SDK/modelos: intenta extraer primer bloque JSON del texto.
+        start = output_text.find("{")
+        end = output_text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise RuntimeError("La respuesta de OpenAI no contiene JSON válido.")
+        parsed = json.loads(output_text[start : end + 1])
+
     return validate_and_normalize(parsed, symbol=str(payload.get("symbol", "UNKNOWN")))
 
 
@@ -356,7 +391,17 @@ def _build_mt5_config(args: argparse.Namespace) -> Dict[str, Any] | None:
 
     if missing:
         raise RuntimeError(
-            "Faltan credenciales de MT5 para ejecutar órdenes reales: " + ", ".join(missing)
+            "Faltan credenciales de MT5 para ejecutar órdenes reales: "
+            + ", ".join(missing)
+            + "\n\n"
+            + "Opciones para solucionarlo:\n"
+            + "1) Variables de entorno (.env): MT5_LOGIN, MT5_PASSWORD, MT5_SERVER\n"
+            + "2) Por CLI: --mt5-login <login> --mt5-password <password> --mt5-server <server>\n"
+            + "3) En Windows CMD (temporal):\n"
+            + "   set MT5_LOGIN=12345678\n"
+            + "   set MT5_PASSWORD=tu_password\n"
+            + "   set MT5_SERVER=Nombre-Del-Server\n"
+            + "   py signal_engine.py --input example_payload.json --once --execute-real-mt5"
         )
 
     return {
