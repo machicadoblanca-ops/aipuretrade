@@ -31,6 +31,14 @@ REM edita .env y agrega OPENAI_API_KEY=tu_api_key
 py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
 ```
 
+Para ver trazas detalladas de todo el flujo (debug):
+
+```bat
+py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once --debug
+```
+
+Con `--debug` verás detalles de: carga de `.env`, parámetros de arranque, normalización de setups IA, decisiones de activación, guardado en DB y (si aplica) envío a MT5.
+
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
