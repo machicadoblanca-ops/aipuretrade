@@ -39,6 +39,37 @@ Variables soportadas:
 - `OPENAI_API_KEY` (requerida)
 - `SIGNALS_DB_PATH` (opcional, default `signals.db`)
 
+Para ejecución real en MT5 (opcional):
+
+- `MT5_LOGIN`
+- `MT5_PASSWORD`
+- `MT5_SERVER`
+- `MT5_PATH` (opcional)
+- `MT5_VOLUME` (opcional, default `0.01`)
+- `MT5_MAGIC` (opcional)
+- `MT5_DEVIATION` (opcional)
+
+### Ejecución real en MT5
+
+> Si usas `--execute-real-mt5`, el script **exige login/password/server** y hace login en MT5 antes de enviar MARKET orders.
+> Para este modo necesitas instalar `MetaTrader5` y tener la terminal abierta/sesión permitida para trading.
+
+```bash
+pip install MetaTrader5
+```
+
+```bash
+set -a; source .env; set +a
+python signal_engine.py \
+  --input example_payload.json \
+  --once \
+  --execute-real-mt5 \
+  --mt5-server "$MT5_SERVER" \
+  --mt5-path "$MT5_PATH"
+```
+
+El envío de orden real se hace como `TRADE_ACTION_DEAL` con `ORDER_TYPE_BUY`/`ORDER_TYPE_SELL` (market), no pending orders.
+
 ### Persistencia en SQLite
 
 Tablas principales:
