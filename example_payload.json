@@ -1,0 +1,46 @@
+{
+  "symbol": "EURUSD",
+  "timestamp_utc": "2026-03-12T12:45:00Z",
+  "spread_points": 12,
+  "session": "LONDON",
+  "news_risk": "LOW",
+  "account": {
+    "balance": 10000,
+    "equity": 9950,
+    "risk_per_trade_pct": 1.0,
+    "max_open_trades": 2
+  },
+  "execution_refinement": {
+    "round_levels": ["000", "00"],
+    "use_extreme_candle_midpoint": true,
+    "tick_size": 0.00001
+  },
+  "timeframes": {
+    "m15": {
+      "candles": [
+        {"t": "2026-03-12T12:15:00Z", "o": 1.0820, "h": 1.0826, "l": 1.0818, "c": 1.0823, "candle_type": "bullish"},
+        {"t": "2026-03-12T12:30:00Z", "o": 1.0823, "h": 1.0829, "l": 1.0820, "c": 1.0827, "candle_type": "bullish_engulfing"}
+      ],
+      "extreme_candle": {"kind": "max", "high": 1.0829, "low": 1.0820, "midpoint": 1.08245},
+      "smc": {
+        "structure": {"bos": "BULLISH", "choch": "NONE"},
+        "liquidity": {"swept": "sell_side"},
+        "fvg": [{"type": "bullish", "high": 1.0821, "low": 1.0819, "status": "open"}],
+        "orderblocks": [
+          {"id": "m15_ob_1", "type": "bullish", "high": 1.0824, "low": 1.0819, "mitigated": false, "displacement_score": 82, "freshness": 0.9}
+        ]
+      }
+    },
+    "h4": {
+      "smc": {
+        "structure": {"bos": "BULLISH", "choch": "NONE"},
+        "premium_discount": "DISCOUNT"
+      }
+    },
+    "d1": {
+      "smc": {
+        "structure": {"bos": "BULLISH", "choch": "NONE"}
+      }
+    }
+  }
+}

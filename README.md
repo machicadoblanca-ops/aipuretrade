@@ -5,17 +5,64 @@ Este documento define, de forma práctica, **qué datos enviar a la IA** y **qu�
 
 ---
 
+## Implementación real en Python (OpenAI)
+
+Se incluye `signal_engine.py` con este flujo real:
+
+1. Analiza mercado con IA.
+2. Guarda análisis y setups en **SQLite**.
+3. Evalúa activación de setups.
+4. Ejecuta **solo MARKET orders** (nunca limit/stop pendientes).
+
+### Ejecución una vez
+
+```bash
+export OPENAI_API_KEY="tu_api_key"
+python signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
+```
+
+### Ejecución continua (análisis 15m + revisión 1m)
+
+```bash
+export OPENAI_API_KEY="tu_api_key"
+python signal_engine.py --input example_payload.json --db signals.db --analysis-every-minutes 15 --review-every-minutes 1 --model gpt-5-mini
+```
+
+### Persistencia en SQLite
+
+Tablas principales:
+
+- `analyses`: análisis de cada ciclo (payload + resumen + sesgos).
+- `order_setups`: propuestas de orden, condición de activación, estado (`PENDING`/`EXECUTED`).
+- `executions`: historial de ejecuciones MARKET disparadas.
+
+Campos de activación en `order_setups`:
+
+- `activation_condition` (texto: cierre con cuerpo de vela, sweep, etc.)
+- `activation_type` (`candle_close`, `wick_rejection`, `break_retest`, `immediate`, ...)
+- `trigger_timeframe` (`m15`, `h4`, `d1`)
+
+### Consultas rápidas
+
+```bash
+sqlite3 signals.db "SELECT setup_id, action, status, activation_type, activation_condition FROM order_setups ORDER BY created_at_utc DESC LIMIT 20;"
+sqlite3 signals.db "SELECT execution_id, setup_id, side, execution_price, executed_at_utc FROM executions ORDER BY execution_id DESC LIMIT 20;"
+```
+
+---
+
 ## Índice
-1. [Objetivo](#objetivo)
-2. [Flujo resumido](#flujo-resumido)
-3. [INPUT: datos que MetaTrader envía a la IA](#input-datos-que-metatrader-envía-a-la-ia)
-4. [OUTPUT: datos que la IA devuelve](#output-datos-que-la-ia-devuelve)
-5. [Cómo elegir el mejor Order Block](#cómo-elegir-el-mejor-order-block)
-6. [Afinación del precio de entrada (`000`, `00`, mitad de vela)](#afinación-del-precio-de-entrada-000-00-mitad-de-vela)
-7. [Reglas de decisión multi-timeframe](#reglas-de-decisión-multi-timeframe)
-8. [Integración en MT4/MT5](#integración-en-mt4mt5)
-9. [Sugerencias prácticas (mi recomendación)](#sugerencias-prácticas-mi-recomendación)
-10. [Pseudocódigo MQL5](#pseudocódigo-mql5)
+1. [Implementación real en Python (OpenAI)](#implementación-real-en-python-openai)
+2. [Objetivo](#objetivo)
+3. [Flujo resumido](#flujo-resumido)
+4. [INPUT: datos que MetaTrader envía a la IA](#input-datos-que-metatrader-envía-a-la-ia)
+5. [OUTPUT: datos que la IA devuelve](#output-datos-que-la-ia-devuelve)
+6. [Cómo elegir el mejor Order Block](#cómo-elegir-el-mejor-order-block)
+7. [Afinación del precio de entrada (`000`, `00`, mitad de vela)](#afinación-del-precio-de-entrada-000-00-mitad-de-vela)
+8. [Reglas de decisión multi-timeframe](#reglas-de-decisión-multi-timeframe)
+9. [Integración en MT4/MT5](#integración-en-mt4mt5)
+10. [Sugerencias prácticas (mi recomendación)](#sugerencias-prácticas-mi-recomendación)
+11. [Pseudocódigo MQL5](#pseudocódigo-mql5)
 
 ---
 
