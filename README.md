@@ -31,18 +31,22 @@ REM edita .env y agrega OPENAI_API_KEY=tu_api_key
 py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
 ```
 
+<<<<<<< codex/locate-api-key-storage-jbb9o8
 Si defines todo en `.env`, puedes correr solo:
 
 ```bat
 py signal_engine.py
 ```
 
+=======
+>>>>>>> main
 Para ver trazas detalladas de todo el flujo (debug):
 
 ```bat
 py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once --debug
 ```
 
+<<<<<<< codex/locate-api-key-storage-jbb9o8
 Con `--debug` verás detalles de: carga de `.env`, parámetros de arranque, normalización de setups IA, decisiones de activación, guardado en DB y (si aplica) envío a MT5.
 
 ### Modo portable (mover carpeta sin romper rutas)
@@ -56,6 +60,8 @@ El script ahora resuelve rutas relativas respecto al directorio donde está `sig
 
 Así puedes mover toda la carpeta del proyecto a otro disco/ruta y seguirá encontrando archivos relativos correctamente.
 
+=======
+>>>>>>> main
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
@@ -138,6 +144,7 @@ Ejemplo por CLI directo:
 py signal_engine.py --input example_payload.json --once --execute-real-mt5 --mt5-login 12345678 --mt5-password tu_password --mt5-server Nombre-Del-Server
 ```
 
+<<<<<<< codex/locate-api-key-storage-jbb9o8
 ### Error común: `Responses.create() got an unexpected keyword argument 'response_format'`
 
 Ese error viene de una diferencia de versiones del SDK de OpenAI. El script ya está preparado para funcionar sin `response_format`, parsear JSON de forma compatible y, si `responses` no está disponible, usar fallback a `chat.completions`.
@@ -148,6 +155,8 @@ Recomendado:
 py -m pip install -U openai
 ```
 
+=======
+>>>>>>> main
 ### Persistencia en SQLite
 
 Tablas principales:

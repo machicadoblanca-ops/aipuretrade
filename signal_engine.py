@@ -30,6 +30,7 @@ def _debug(msg: str) -> None:
     if DEBUG:
         print(f"[DEBUG {_utc_now()}] {msg}")
 
+<<<<<<< codex/locate-api-key-storage-jbb9o8
 
 def _script_dir() -> Path:
     return Path(__file__).resolve().parent
@@ -49,6 +50,8 @@ def _env_bool(name: str, default: bool = False) -> bool:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on", "si", "sí"}
 
+=======
+>>>>>>> main
 SYSTEM_PROMPT = """
 Eres un motor de trading cuantitativo para MetaTrader (MT4/MT5).
 Analiza payload multi-timeframe (m15, h4, d1) con SMC, tipos de velas,
@@ -110,12 +113,16 @@ ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "l
 
 def _load_dotenv_if_available() -> None:
     """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
+<<<<<<< codex/locate-api-key-storage-jbb9o8
     # Compatibilidad defensiva: si una copia vieja no tiene _script_dir, no debe crashear.
     try:
         script_base = _script_dir()
     except Exception:
         script_base = Path(__file__).resolve().parent
     dotenv_script = script_base / ".env"
+=======
+    dotenv_script = _script_dir() / ".env"
+>>>>>>> main
     dotenv_cwd = Path(".env").resolve()
     dotenv_target = dotenv_script if dotenv_script.exists() else dotenv_cwd
 
@@ -123,7 +130,12 @@ def _load_dotenv_if_available() -> None:
         from dotenv import load_dotenv  # type: ignore
     except ImportError:
         _debug("python-dotenv no disponible; intentando parser interno de .env")
+<<<<<<< codex/locate-api-key-storage-jbb9o8
         if not dotenv_target.exists():
+=======
+        dotenv_path = ".env"
+        if not os.path.exists(dotenv_path):
+>>>>>>> main
             _debug("No existe archivo .env; continúo con variables de entorno del sistema")
             return
         with open(dotenv_target, "r", encoding="utf-8") as f:
@@ -136,10 +148,17 @@ def _load_dotenv_if_available() -> None:
                 value = value.strip().strip('"').strip("'")
                 if key and key not in os.environ:
                     os.environ[key] = value
+<<<<<<< codex/locate-api-key-storage-jbb9o8
         _debug(f".env cargado con parser interno desde {dotenv_target}")
         return
     load_dotenv(dotenv_path=dotenv_target)
     _debug(f".env cargado con python-dotenv desde {dotenv_target}")
+=======
+        _debug(".env cargado con parser interno")
+        return
+    load_dotenv()
+    _debug(".env cargado con python-dotenv")
+>>>>>>> main
 
 
 def _utc_now() -> str:
@@ -694,6 +713,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="SMC engine: IA cada 15m + revisión cada 1m + SQLite + market-only")
     parser.add_argument("--input", default=os.getenv("INPUT_JSON_PATH"), help="JSON de mercado actualizado por MT")
     parser.add_argument("--db", default=os.getenv("SIGNALS_DB_PATH", "signals.db"), help="Ruta SQLite")
+<<<<<<< codex/locate-api-key-storage-jbb9o8
     parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-5-mini"), help="Modelo OpenAI")
     parser.add_argument("--output", default=os.getenv("OUTPUT_JSON_PATH"), help="Salida JSON de análisis")
     parser.add_argument("--analysis-every-minutes", type=int, default=int(os.getenv("ANALYSIS_EVERY_MINUTES", "15")), help="Frecuencia de análisis IA")
@@ -701,6 +721,15 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", default=_env_bool("RUN_ONCE", False), help="Ejecuta un ciclo único (analiza y revisa una vez)")
     parser.add_argument("--debug", action="store_true", default=_env_bool("DEBUG", False), help="Activa logs detallados de depuración")
     parser.add_argument("--execute-real-mt5", action="store_true", default=_env_bool("EXECUTE_REAL_MT5", False), help="Ejecuta órdenes reales en MT5 (requiere login)")
+=======
+    parser.add_argument("--model", default="gpt-5-mini", help="Modelo OpenAI")
+    parser.add_argument("--output", help="Salida JSON de análisis")
+    parser.add_argument("--analysis-every-minutes", type=int, default=15, help="Frecuencia de análisis IA")
+    parser.add_argument("--review-every-minutes", type=int, default=1, help="Frecuencia de revisión/ejecución")
+    parser.add_argument("--once", action="store_true", help="Ejecuta un ciclo único (analiza y revisa una vez)")
+    parser.add_argument("--debug", action="store_true", help="Activa logs detallados de depuración")
+    parser.add_argument("--execute-real-mt5", action="store_true", help="Ejecuta órdenes reales en MT5 (requiere login)")
+>>>>>>> main
     parser.add_argument("--mt5-login", default=os.getenv("MT5_LOGIN"), help="Login de cuenta MT5")
     parser.add_argument("--mt5-password", default=os.getenv("MT5_PASSWORD"), help="Password de cuenta MT5")
     parser.add_argument("--mt5-server", default=os.getenv("MT5_SERVER"), help="Servidor de cuenta MT5")
@@ -709,6 +738,7 @@ def main() -> None:
     parser.add_argument("--mt5-magic", type=int, default=int(os.getenv("MT5_MAGIC", "20260312")), help="Magic number")
     parser.add_argument("--mt5-deviation", type=int, default=int(os.getenv("MT5_DEVIATION", "20")), help="Desviación de precio")
     args = parser.parse_args()
+<<<<<<< codex/locate-api-key-storage-jbb9o8
     if not args.input:
         raise RuntimeError("Falta --input o INPUT_JSON_PATH en .env")
 
@@ -724,6 +754,10 @@ def main() -> None:
         f"analysis_every={args.analysis_every_minutes}, review_every={args.review_every_minutes}, "
         f"execute_real_mt5={args.execute_real_mt5}"
     )
+=======
+    DEBUG = bool(args.debug)
+    _debug("Modo DEBUG activado")
+>>>>>>> main
     mt5_config = _build_mt5_config(args)
 
     init_db(db_path)
