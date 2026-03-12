@@ -64,6 +64,14 @@ python signal_engine.py --input example_payload.json --db signals.db --analysis-
 Variables soportadas:
 
 - `OPENAI_API_KEY` (requerida)
+- `OPENAI_MODEL` (opcional, default `gpt-5-mini`)
+- `INPUT_JSON_PATH` (opcional, reemplaza `--input`)
+- `OUTPUT_JSON_PATH` (opcional, reemplaza `--output`)
+- `ANALYSIS_EVERY_MINUTES` (opcional, reemplaza `--analysis-every-minutes`)
+- `REVIEW_EVERY_MINUTES` (opcional, reemplaza `--review-every-minutes`)
+- `RUN_ONCE` (opcional, `true/false`, reemplaza `--once`)
+- `DEBUG` (opcional, `true/false`, reemplaza `--debug`)
+- `EXECUTE_REAL_MT5` (opcional, `true/false`, reemplaza `--execute-real-mt5`)
 - `SIGNALS_DB_PATH` (opcional, default `signals.db`)
 
 Para ejecución real en MT5 (opcional):
@@ -122,16 +130,6 @@ Ejemplo por CLI directo:
 
 ```bat
 py signal_engine.py --input example_payload.json --once --execute-real-mt5 --mt5-login 12345678 --mt5-password tu_password --mt5-server Nombre-Del-Server
-```
-
-### Error común: `Responses.create() got an unexpected keyword argument 'response_format'`
-
-Ese error viene de una diferencia de versiones del SDK de OpenAI. El script ya está preparado para funcionar sin `response_format`, parsear JSON de forma compatible y, si `responses` no está disponible, usar fallback a `chat.completions`.
-
-Recomendado:
-
-```bat
-py -m pip install -U openai
 ```
 
 ### Persistencia en SQLite

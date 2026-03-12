@@ -680,7 +680,7 @@ def main() -> None:
     _load_dotenv_if_available()
 
     parser = argparse.ArgumentParser(description="SMC engine: IA cada 15m + revisión cada 1m + SQLite + market-only")
-    parser.add_argument("--input", required=True, help="JSON de mercado actualizado por MT")
+    parser.add_argument("--input", default=os.getenv("INPUT_JSON_PATH"), help="JSON de mercado actualizado por MT")
     parser.add_argument("--db", default=os.getenv("SIGNALS_DB_PATH", "signals.db"), help="Ruta SQLite")
     parser.add_argument("--model", default="gpt-5-mini", help="Modelo OpenAI")
     parser.add_argument("--output", help="Salida JSON de análisis")
