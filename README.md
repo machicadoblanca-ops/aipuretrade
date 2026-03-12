@@ -53,6 +53,14 @@ python signal_engine.py --input example_payload.json --db signals.db --analysis-
 Variables soportadas:
 
 - `OPENAI_API_KEY` (requerida)
+- `OPENAI_MODEL` (opcional, default `gpt-5-mini`)
+- `INPUT_JSON_PATH` (opcional, reemplaza `--input`)
+- `OUTPUT_JSON_PATH` (opcional, reemplaza `--output`)
+- `ANALYSIS_EVERY_MINUTES` (opcional, reemplaza `--analysis-every-minutes`)
+- `REVIEW_EVERY_MINUTES` (opcional, reemplaza `--review-every-minutes`)
+- `RUN_ONCE` (opcional, `true/false`, reemplaza `--once`)
+- `DEBUG` (opcional, `true/false`, reemplaza `--debug`)
+- `EXECUTE_REAL_MT5` (opcional, `true/false`, reemplaza `--execute-real-mt5`)
 - `SIGNALS_DB_PATH` (opcional, default `signals.db`)
 
 Para ejecución real en MT5 (opcional):

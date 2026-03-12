@@ -19,6 +19,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 
@@ -90,6 +91,10 @@ ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "l
 
 def _load_dotenv_if_available() -> None:
     """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
+    dotenv_script = _script_dir() / ".env"
+    dotenv_cwd = Path(".env").resolve()
+    dotenv_target = dotenv_script if dotenv_script.exists() else dotenv_cwd
+
     try:
         from dotenv import load_dotenv  # type: ignore
     except ImportError:
@@ -98,7 +103,7 @@ def _load_dotenv_if_available() -> None:
         if not os.path.exists(dotenv_path):
             _debug("No existe archivo .env; continúo con variables de entorno del sistema")
             return
-        with open(dotenv_path, "r", encoding="utf-8") as f:
+        with open(dotenv_target, "r", encoding="utf-8") as f:
             for raw_line in f:
                 line = raw_line.strip()
                 if not line or line.startswith("#") or "=" not in line:
@@ -664,7 +669,7 @@ def main() -> None:
     _load_dotenv_if_available()
 
     parser = argparse.ArgumentParser(description="SMC engine: IA cada 15m + revisión cada 1m + SQLite + market-only")
-    parser.add_argument("--input", required=True, help="JSON de mercado actualizado por MT")
+    parser.add_argument("--input", default=os.getenv("INPUT_JSON_PATH"), help="JSON de mercado actualizado por MT")
     parser.add_argument("--db", default=os.getenv("SIGNALS_DB_PATH", "signals.db"), help="Ruta SQLite")
     parser.add_argument("--model", default="gpt-5-mini", help="Modelo OpenAI")
     parser.add_argument("--output", help="Salida JSON de análisis")
@@ -690,10 +695,10 @@ def main() -> None:
     )
     mt5_config = _build_mt5_config(args)
 
-    init_db(args.db)
+    init_db(db_path)
 
     if args.once:
-        result, executed = run_cycle(args.input, args.db, args.model, mt5_config=mt5_config, output=args.output)
+        result, executed = run_cycle(input_path, db_path, args.model, mt5_config=mt5_config, output=output_path)
         print(json.dumps({"mode": "once", "analysis_id": result.get("analysis_id"), "executed_market_orders": executed}, ensure_ascii=False))
         return
 
@@ -709,10 +714,10 @@ def main() -> None:
         # 1) Análisis IA cada N minutos (default 15)
         if now_ts - last_analysis_ts >= analysis_sec:
             result = generate_signal(payload, args.model)
-            store_analysis(args.db, payload, result, args.model)
+            store_analysis(db_path, payload, result, args.model)
             last_analysis_ts = now_ts
-            if args.output:
-                with open(args.output, "w", encoding="utf-8") as f:
+            if output_path:
+                with open(output_path, "w", encoding="utf-8") as f:
                     f.write(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
             print(json.dumps({
                 "at": _utc_now(),
@@ -724,7 +729,7 @@ def main() -> None:
             _debug(f"Evento analysis emitido. analysis_id={result.get('analysis_id')}")
 
         # 2) Revisión/ejecución cada 1 minuto (o valor configurable)
-        executed = evaluate_and_execute_setups(args.db, payload, mt5_config=mt5_config)
+        executed = evaluate_and_execute_setups(db_path, payload, mt5_config=mt5_config)
         print(json.dumps({
             "at": _utc_now(),
             "event": "review",
