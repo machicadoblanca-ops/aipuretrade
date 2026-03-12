@@ -80,6 +80,15 @@ ALLOWED_ACTIONS = {
 ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "liquidity_sweep", "immediate", "other"}
 
 
+def _load_dotenv_if_available() -> None:
+    """Carga .env si python-dotenv está instalado (opcional)."""
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except ImportError:
+        return
+    load_dotenv()
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -394,9 +403,11 @@ def run_cycle(input_path: str, db_path: str, model: str, output: str | None = No
 
 
 def main() -> None:
+    _load_dotenv_if_available()
+
     parser = argparse.ArgumentParser(description="SMC engine: IA cada 15m + revisión cada 1m + SQLite + market-only")
     parser.add_argument("--input", required=True, help="JSON de mercado actualizado por MT")
-    parser.add_argument("--db", default="signals.db", help="Ruta SQLite")
+    parser.add_argument("--db", default=os.getenv("SIGNALS_DB_PATH", "signals.db"), help="Ruta SQLite")
     parser.add_argument("--model", default="gpt-5-mini", help="Modelo OpenAI")
     parser.add_argument("--output", help="Salida JSON de análisis")
     parser.add_argument("--analysis-every-minutes", type=int, default=15, help="Frecuencia de análisis IA")
