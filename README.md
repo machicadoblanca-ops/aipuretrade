@@ -37,19 +37,6 @@ Para ver trazas detalladas de todo el flujo (debug):
 py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once --debug
 ```
 
-Con `--debug` verás detalles de: carga de `.env`, parámetros de arranque, normalización de setups IA, decisiones de activación, guardado en DB y (si aplica) envío a MT5.
-
-### Modo portable (mover carpeta sin romper rutas)
-
-El script ahora resuelve rutas relativas respecto al directorio donde está `signal_engine.py` (no respecto al directorio actual de la consola):
-
-- `--input example_payload.json`
-- `--db signals.db`
-- `--output signal.json`
-- archivo `.env`
-
-Así puedes mover toda la carpeta del proyecto a otro disco/ruta y seguirá encontrando archivos relativos correctamente.
-
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
