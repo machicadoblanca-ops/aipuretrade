@@ -17,16 +17,27 @@ Se incluye `signal_engine.py` con este flujo real:
 ### Ejecución una vez
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
+cp .env.example .env
+# edita .env con tu api key y (opcional) ruta de DB
+set -a; source .env; set +a
 python signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
 ```
 
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
+set -a; source .env; set +a
 python signal_engine.py --input example_payload.json --db signals.db --analysis-every-minutes 15 --review-every-minutes 1 --model gpt-5-mini
 ```
+
+### Variables de entorno (`.env`)
+
+`signal_engine.py` intenta cargar automáticamente un archivo `.env` (si está instalado `python-dotenv`).
+
+Variables soportadas:
+
+- `OPENAI_API_KEY` (requerida)
+- `SIGNALS_DB_PATH` (opcional, default `signals.db`)
 
 ### Persistencia en SQLite
 
