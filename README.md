@@ -17,15 +17,92 @@ Se incluye `signal_engine.py` con este flujo real:
 ### Ejecución una vez
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
+cp .env.example .env
+# edita .env con tu api key y (opcional) ruta de DB
+set -a; source .env; set +a
 python signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
+```
+
+En Windows CMD:
+
+```bat
+copy .env.example .env
+REM edita .env y agrega OPENAI_API_KEY=tu_api_key
+py signal_engine.py --input example_payload.json --db signals.db --output signal.json --model gpt-5-mini --once
 ```
 
 ### Ejecución continua (análisis 15m + revisión 1m)
 
 ```bash
-export OPENAI_API_KEY="tu_api_key"
+set -a; source .env; set +a
 python signal_engine.py --input example_payload.json --db signals.db --analysis-every-minutes 15 --review-every-minutes 1 --model gpt-5-mini
+```
+
+### Variables de entorno (`.env`)
+
+`signal_engine.py` intenta cargar automáticamente un archivo `.env` (si está instalado `python-dotenv`).
+
+Variables soportadas:
+
+- `OPENAI_API_KEY` (requerida)
+- `SIGNALS_DB_PATH` (opcional, default `signals.db`)
+
+Para ejecución real en MT5 (opcional):
+
+- `MT5_LOGIN`
+- `MT5_PASSWORD`
+- `MT5_SERVER`
+- `MT5_PATH` (opcional)
+- `MT5_VOLUME` (opcional, default `0.01`)
+- `MT5_MAGIC` (opcional)
+- `MT5_DEVIATION` (opcional)
+
+Significado de estos parámetros de ejecución MT5:
+
+- `MT5_VOLUME`: tamaño de lote por orden (ej. `0.01` = micro lote en muchos brokers). A mayor volumen, mayor exposición/riesgo por trade.
+- `MT5_MAGIC`: identificador numérico de la estrategia/EA en MT5. Sirve para distinguir tus órdenes de otras (manuales u otros robots).
+- `MT5_DEVIATION`: desviación máxima permitida en puntos para ejecutar una orden market (tolerancia al slippage). Si el precio se mueve más que este valor, MT5 puede rechazar la ejecución.
+
+> Todas estas variables se leen en Python con `os.getenv(...)` al iniciar el script.
+
+### Ejecución real en MT5
+
+> Si usas `--execute-real-mt5`, el script **exige login/password/server** y hace login en MT5 antes de enviar MARKET orders.
+> Para este modo necesitas instalar `MetaTrader5` y tener la terminal abierta/sesión permitida para trading.
+
+```bash
+pip install MetaTrader5
+```
+
+```bash
+set -a; source .env; set +a
+python signal_engine.py \
+  --input example_payload.json \
+  --once \
+  --execute-real-mt5 \
+  --mt5-server "$MT5_SERVER" \
+  --mt5-path "$MT5_PATH"
+```
+
+El envío de orden real se hace como `TRADE_ACTION_DEAL` con `ORDER_TYPE_BUY`/`ORDER_TYPE_SELL` (market), no pending orders.
+
+### Error común: "Faltan credenciales de MT5"
+
+Si ejecutas con `--execute-real-mt5`, debes pasar credenciales por `.env` o por CLI.
+
+Ejemplo en Windows CMD:
+
+```bat
+set MT5_LOGIN=12345678
+set MT5_PASSWORD=tu_password
+set MT5_SERVER=Nombre-Del-Server
+py signal_engine.py --input example_payload.json --once --execute-real-mt5
+```
+
+Ejemplo por CLI directo:
+
+```bat
+py signal_engine.py --input example_payload.json --once --execute-real-mt5 --mt5-login 12345678 --mt5-password tu_password --mt5-server Nombre-Del-Server
 ```
 
 ### Persistencia en SQLite
