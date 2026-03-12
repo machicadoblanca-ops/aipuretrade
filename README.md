@@ -121,16 +121,6 @@ Ejemplo por CLI directo:
 py signal_engine.py --input example_payload.json --once --execute-real-mt5 --mt5-login 12345678 --mt5-password tu_password --mt5-server Nombre-Del-Server
 ```
 
-### Error común: `Responses.create() got an unexpected keyword argument 'response_format'`
-
-Ese error viene de una diferencia de versiones del SDK de OpenAI. El script ya está preparado para funcionar sin `response_format`, parsear JSON de forma compatible y, si `responses` no está disponible, usar fallback a `chat.completions`.
-
-Recomendado:
-
-```bat
-py -m pip install -U openai
-```
-
 ### Persistencia en SQLite
 
 Tablas principales:

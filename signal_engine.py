@@ -91,10 +91,6 @@ ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "l
 
 def _load_dotenv_if_available() -> None:
     """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
-    dotenv_script = _script_dir() / ".env"
-    dotenv_cwd = Path(".env").resolve()
-    dotenv_target = dotenv_script if dotenv_script.exists() else dotenv_cwd
-
     try:
         from dotenv import load_dotenv  # type: ignore
     except ImportError:
@@ -103,7 +99,7 @@ def _load_dotenv_if_available() -> None:
         if not os.path.exists(dotenv_path):
             _debug("No existe archivo .env; continúo con variables de entorno del sistema")
             return
-        with open(dotenv_target, "r", encoding="utf-8") as f:
+        with open(dotenv_path, "r", encoding="utf-8") as f:
             for raw_line in f:
                 line = raw_line.strip()
                 if not line or line.startswith("#") or "=" not in line:
