@@ -80,6 +80,28 @@ ALLOWED_ACTIONS = {
 ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "liquidity_sweep", "immediate", "other"}
 
 
+def _load_dotenv_if_available() -> None:
+    """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except ImportError:
+        dotenv_path = ".env"
+        if not os.path.exists(dotenv_path):
+            return
+        with open(dotenv_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        return
+    load_dotenv()
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -253,20 +275,55 @@ def validate_and_normalize(result: Dict[str, Any], symbol: str) -> Dict[str, Any
 def generate_signal(payload: Dict[str, Any], model: str) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("Falta OPENAI_API_KEY en variables de entorno.")
+        raise RuntimeError(
+            "Falta OPENAI_API_KEY en variables de entorno. "
+            "Configúrala en .env (OPENAI_API_KEY=...) o en Windows CMD: set OPENAI_API_KEY=tu_api_key"
+        )
 
     from openai import OpenAI  # lazy import para permitir tests sin dependencia instalada
 
     client = OpenAI(api_key=api_key)
-    response = client.responses.create(
-        model=model,
-        input=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "Analiza y genera setups para este payload:\n" + json.dumps(payload, ensure_ascii=False)},
-        ],
-        response_format={"type": "json_object"},
+    user_prompt = (
+        "Analiza y genera setups para este payload. "
+        "Responde estrictamente con JSON válido, sin markdown ni texto adicional:\n"
+        + json.dumps(payload, ensure_ascii=False)
     )
-    parsed = json.loads(response.output_text)
+
+    output_text = ""
+    try:
+        response = client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        output_text = str(getattr(response, "output_text", "") or "").strip()
+    except Exception:
+        # Compatibilidad con SDK antiguos que no soportan Responses API.
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0,
+        )
+        output_text = str((completion.choices[0].message.content if completion.choices else "") or "").strip()
+
+    if not output_text:
+        raise RuntimeError("La API devolvió respuesta vacía.")
+
+    try:
+        parsed = json.loads(output_text)
+    except json.JSONDecodeError:
+        # Compatibilidad SDK/modelos: intenta extraer primer bloque JSON del texto.
+        start = output_text.find("{")
+        end = output_text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise RuntimeError("La respuesta de OpenAI no contiene JSON válido.")
+        parsed = json.loads(output_text[start : end + 1])
+
     return validate_and_normalize(parsed, symbol=str(payload.get("symbol", "UNKNOWN")))
 
 
@@ -333,14 +390,140 @@ def _should_activate(action: str, activation_type: str, entry: float, current_cl
     return False
 
 
-def evaluate_and_execute_setups(db_path: str, payload: Dict[str, Any]) -> int:
+def _build_mt5_config(args: argparse.Namespace) -> Dict[str, Any] | None:
+    if not args.execute_real_mt5:
+        return None
+
+    missing = []
+    if not args.mt5_login:
+        missing.append("mt5_login/MT5_LOGIN")
+    if not args.mt5_password:
+        missing.append("mt5_password/MT5_PASSWORD")
+    if not args.mt5_server:
+        missing.append("mt5_server/MT5_SERVER")
+
+    if missing:
+        raise RuntimeError(
+            "Faltan credenciales de MT5 para ejecutar órdenes reales: "
+            + ", ".join(missing)
+            + "\n\n"
+            + "Opciones para solucionarlo:\n"
+            + "1) Variables de entorno (.env): MT5_LOGIN, MT5_PASSWORD, MT5_SERVER\n"
+            + "2) Por CLI: --mt5-login <login> --mt5-password <password> --mt5-server <server>\n"
+            + "3) En Windows CMD (temporal):\n"
+            + "   set MT5_LOGIN=12345678\n"
+            + "   set MT5_PASSWORD=tu_password\n"
+            + "   set MT5_SERVER=Nombre-Del-Server\n"
+            + "   py signal_engine.py --input example_payload.json --once --execute-real-mt5"
+        )
+
+    return {
+        "login": int(args.mt5_login),
+        "password": str(args.mt5_password),
+        "server": str(args.mt5_server),
+        "path": str(args.mt5_path) if args.mt5_path else None,
+        "volume": float(args.mt5_volume),
+        "magic": int(args.mt5_magic),
+        "deviation": int(args.mt5_deviation),
+    }
+
+
+def _init_mt5_client(mt5_config: Dict[str, Any]):
+    try:
+        import MetaTrader5 as mt5  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("No está instalado MetaTrader5. Instala el paquete para ejecución real.") from exc
+
+    initialized = mt5.initialize(path=mt5_config["path"]) if mt5_config.get("path") else mt5.initialize()
+    if not initialized:
+        raise RuntimeError(f"No se pudo inicializar MT5: {mt5.last_error()}")
+
+    logged = mt5.login(
+        mt5_config["login"],
+        password=mt5_config["password"],
+        server=mt5_config["server"],
+    )
+    if not logged:
+        last_error = mt5.last_error()
+        mt5.shutdown()
+        raise RuntimeError(f"Falló login MT5: {last_error}")
+
+    return mt5
+
+
+def _send_market_order_mt5(
+    mt5: Any,
+    symbol: str,
+    side: str,
+    volume: float,
+    sl: float,
+    tp: float,
+    deviation: int,
+    magic: int,
+    comment: str,
+) -> Tuple[bool, str, float]:
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return False, f"Símbolo no encontrado en MT5: {symbol}", 0.0
+
+    if not info.visible:
+        if not mt5.symbol_select(symbol, True):
+            return False, f"No se pudo habilitar símbolo en MT5: {symbol}", 0.0
+
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        return False, f"No hay tick para símbolo {symbol}", 0.0
+
+    order_type = mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL
+    price = float(tick.ask if side == "BUY" else tick.bid)
+
+    filling_type = mt5.ORDER_FILLING_IOC
+    symbol_filling_mode = getattr(info, "filling_mode", None)
+    if symbol_filling_mode == mt5.SYMBOL_FILLING_FOK:
+        filling_type = mt5.ORDER_FILLING_FOK
+    elif symbol_filling_mode == mt5.SYMBOL_FILLING_RETURN:
+        filling_type = mt5.ORDER_FILLING_RETURN
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": volume,
+        "type": order_type,
+        "price": price,
+        "deviation": deviation,
+        "magic": magic,
+        "comment": comment,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling_type,
+    }
+
+    if sl > 0:
+        request["sl"] = sl
+    if tp > 0:
+        request["tp"] = tp
+
+    result = mt5.order_send(request)
+    if result is None:
+        return False, f"order_send devolvió None. last_error={mt5.last_error()}", price
+
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        return False, f"retcode={result.retcode}, comment={getattr(result, 'comment', '')}", price
+
+    return True, f"ticket={getattr(result, 'order', 0)}", float(getattr(result, "price", price) or price)
+
+
+def evaluate_and_execute_setups(db_path: str, payload: Dict[str, Any], mt5_config: Dict[str, Any] | None = None) -> int:
     conn = sqlite3.connect(db_path)
     executed = 0
+    mt5 = None
     try:
+        if mt5_config:
+            mt5 = _init_mt5_client(mt5_config)
+
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT s.setup_id, s.analysis_id, a.symbol, s.action, s.entry, s.activation_type, s.trigger_timeframe
+            SELECT s.setup_id, s.analysis_id, a.symbol, s.action, s.entry, s.sl, s.tp1, s.activation_type, s.trigger_timeframe
             FROM order_setups s
             JOIN analyses a ON a.analysis_id = s.analysis_id
             WHERE s.is_active = 1 AND s.status = 'PENDING'
@@ -349,7 +532,7 @@ def evaluate_and_execute_setups(db_path: str, payload: Dict[str, Any]) -> int:
         )
         rows = cur.fetchall()
 
-        for setup_id, analysis_id, symbol, action, entry, activation_type, trigger_tf in rows:
+        for setup_id, analysis_id, symbol, action, entry, sl, tp1, activation_type, trigger_tf in rows:
             current_close = _latest_close(payload, trigger_tf)
             if not _should_activate(action, activation_type, _safe_float(entry), current_close):
                 continue
@@ -357,6 +540,31 @@ def evaluate_and_execute_setups(db_path: str, payload: Dict[str, Any]) -> int:
             now_utc = _utc_now()
             side = "BUY" if action == "MARKET_BUY" else "SELL"
             note = f"Activado por {activation_type}. close={current_close}"
+            execution_price = current_close
+
+            if mt5:
+                ok, mt5_note, execution_price = _send_market_order_mt5(
+                    mt5=mt5,
+                    symbol=symbol,
+                    side=side,
+                    volume=float(mt5_config["volume"]),
+                    sl=_safe_float(sl),
+                    tp=_safe_float(tp1),
+                    deviation=int(mt5_config["deviation"]),
+                    magic=int(mt5_config["magic"]),
+                    comment=f"{setup_id}|{activation_type}",
+                )
+                note = f"{note}. mt5={mt5_note}"
+                if not ok:
+                    cur.execute(
+                        """
+                        UPDATE order_setups
+                        SET status='FAILED', is_active=0, activation_price=?, activated_at_utc=?
+                        WHERE setup_id=?
+                        """,
+                        (execution_price, now_utc, setup_id),
+                    )
+                    continue
 
             cur.execute(
                 """
@@ -364,28 +572,36 @@ def evaluate_and_execute_setups(db_path: str, payload: Dict[str, Any]) -> int:
                 SET status='EXECUTED', is_active=0, activation_price=?, activated_at_utc=?, executed_at_utc=?
                 WHERE setup_id=?
                 """,
-                (current_close, now_utc, now_utc, setup_id),
+                (execution_price, now_utc, now_utc, setup_id),
             )
             cur.execute(
                 """
                 INSERT INTO executions (setup_id, analysis_id, symbol, side, execution_price, execution_note, executed_at_utc)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (setup_id, analysis_id, symbol, side, current_close, note, now_utc),
+                (setup_id, analysis_id, symbol, side, execution_price, note, now_utc),
             )
             executed += 1
 
         conn.commit()
     finally:
+        if mt5 is not None:
+            mt5.shutdown()
         conn.close()
     return executed
 
 
-def run_cycle(input_path: str, db_path: str, model: str, output: str | None = None) -> Tuple[Dict[str, Any], int]:
+def run_cycle(
+    input_path: str,
+    db_path: str,
+    model: str,
+    mt5_config: Dict[str, Any] | None = None,
+    output: str | None = None,
+) -> Tuple[Dict[str, Any], int]:
     payload = _load_json(input_path)
     result = generate_signal(payload, model)
     store_analysis(db_path, payload, result, model)
-    executed = evaluate_and_execute_setups(db_path, payload)
+    executed = evaluate_and_execute_setups(db_path, payload, mt5_config=mt5_config)
 
     if output:
         with open(output, "w", encoding="utf-8") as f:
@@ -394,20 +610,31 @@ def run_cycle(input_path: str, db_path: str, model: str, output: str | None = No
 
 
 def main() -> None:
+    _load_dotenv_if_available()
+
     parser = argparse.ArgumentParser(description="SMC engine: IA cada 15m + revisión cada 1m + SQLite + market-only")
     parser.add_argument("--input", required=True, help="JSON de mercado actualizado por MT")
-    parser.add_argument("--db", default="signals.db", help="Ruta SQLite")
+    parser.add_argument("--db", default=os.getenv("SIGNALS_DB_PATH", "signals.db"), help="Ruta SQLite")
     parser.add_argument("--model", default="gpt-5-mini", help="Modelo OpenAI")
     parser.add_argument("--output", help="Salida JSON de análisis")
     parser.add_argument("--analysis-every-minutes", type=int, default=15, help="Frecuencia de análisis IA")
     parser.add_argument("--review-every-minutes", type=int, default=1, help="Frecuencia de revisión/ejecución")
     parser.add_argument("--once", action="store_true", help="Ejecuta un ciclo único (analiza y revisa una vez)")
+    parser.add_argument("--execute-real-mt5", action="store_true", help="Ejecuta órdenes reales en MT5 (requiere login)")
+    parser.add_argument("--mt5-login", default=os.getenv("MT5_LOGIN"), help="Login de cuenta MT5")
+    parser.add_argument("--mt5-password", default=os.getenv("MT5_PASSWORD"), help="Password de cuenta MT5")
+    parser.add_argument("--mt5-server", default=os.getenv("MT5_SERVER"), help="Servidor de cuenta MT5")
+    parser.add_argument("--mt5-path", default=os.getenv("MT5_PATH"), help="Ruta terminal MT5 (opcional)")
+    parser.add_argument("--mt5-volume", type=float, default=float(os.getenv("MT5_VOLUME", "0.01")), help="Lote para ejecución real")
+    parser.add_argument("--mt5-magic", type=int, default=int(os.getenv("MT5_MAGIC", "20260312")), help="Magic number")
+    parser.add_argument("--mt5-deviation", type=int, default=int(os.getenv("MT5_DEVIATION", "20")), help="Desviación de precio")
     args = parser.parse_args()
+    mt5_config = _build_mt5_config(args)
 
     init_db(args.db)
 
     if args.once:
-        result, executed = run_cycle(args.input, args.db, args.model, args.output)
+        result, executed = run_cycle(args.input, args.db, args.model, mt5_config=mt5_config, output=args.output)
         print(json.dumps({"mode": "once", "analysis_id": result.get("analysis_id"), "executed_market_orders": executed}, ensure_ascii=False))
         return
 
@@ -436,7 +663,7 @@ def main() -> None:
             }, ensure_ascii=False))
 
         # 2) Revisión/ejecución cada 1 minuto (o valor configurable)
-        executed = evaluate_and_execute_setups(args.db, payload)
+        executed = evaluate_and_execute_setups(args.db, payload, mt5_config=mt5_config)
         print(json.dumps({
             "at": _utc_now(),
             "event": "review",
