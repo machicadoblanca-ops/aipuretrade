@@ -19,6 +19,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 
@@ -90,6 +91,10 @@ ALLOWED_ACTIVATION_TYPES = {"candle_close", "wick_rejection", "break_retest", "l
 
 def _load_dotenv_if_available() -> None:
     """Carga .env (con python-dotenv si existe, o parser simple de fallback)."""
+    dotenv_script = _script_dir() / ".env"
+    dotenv_cwd = Path(".env").resolve()
+    dotenv_target = dotenv_script if dotenv_script.exists() else dotenv_cwd
+
     try:
         from dotenv import load_dotenv  # type: ignore
     except ImportError:
@@ -98,7 +103,7 @@ def _load_dotenv_if_available() -> None:
         if not os.path.exists(dotenv_path):
             _debug("No existe archivo .env; continúo con variables de entorno del sistema")
             return
-        with open(dotenv_path, "r", encoding="utf-8") as f:
+        with open(dotenv_target, "r", encoding="utf-8") as f:
             for raw_line in f:
                 line = raw_line.strip()
                 if not line or line.startswith("#") or "=" not in line:
@@ -146,6 +151,7 @@ def _latest_close(payload: Dict[str, Any], timeframe: str) -> float:
 
 
 def init_db(db_path: str) -> None:
+    _debug(f"Inicializando/validando esquema SQLite en db={db_path}")
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.cursor()
@@ -208,6 +214,7 @@ def init_db(db_path: str) -> None:
             """
         )
         conn.commit()
+        _debug("Esquema SQLite listo")
     finally:
         conn.close()
 
@@ -221,6 +228,7 @@ def _to_market_only(action: str) -> str:
 
 
 def validate_and_normalize(result: Dict[str, Any], symbol: str) -> Dict[str, Any]:
+    _debug(f"Validando y normalizando respuesta IA para symbol={symbol}")
     result.setdefault("symbol", symbol)
     result.setdefault("analysis_id", f"analysis_{int(datetime.now().timestamp())}")
     result.setdefault("market_summary", "")
@@ -228,6 +236,7 @@ def validate_and_normalize(result: Dict[str, Any], symbol: str) -> Dict[str, Any
 
     setups = result.get("order_setups") or []
     if not isinstance(setups, list) or not setups:
+        _debug("La IA no devolvió order_setups válidos; creando NO_TRADE por defecto")
         setups = [{"setup_id": f"{result['analysis_id']}_1", "priority": 1, "action": "NO_TRADE", "activation_condition": "Sin setup"}]
 
     normalized: List[Dict[str, Any]] = []
@@ -235,21 +244,25 @@ def validate_and_normalize(result: Dict[str, Any], symbol: str) -> Dict[str, Any
         setup_id = str(setup.get("setup_id") or f"{result['analysis_id']}_{idx}")
         action = str(setup.get("action", "NO_TRADE"))
         if action not in ALLOWED_ACTIONS:
+            _debug(f"Setup {setup_id}: action inválida '{action}', se fuerza NO_TRADE")
             action = "NO_TRADE"
 
         confidence = _safe_float(setup.get("confidence"), 0.0)
         rr = _safe_float(setup.get("rr"), 0.0)
         if action != "NO_TRADE" and (confidence < 70 or rr < 1.5):
+            _debug(f"Setup {setup_id}: confidence/rr insuficiente (confidence={confidence}, rr={rr}), se fuerza NO_TRADE")
             action = "NO_TRADE"
 
         action = _to_market_only(action)  # requisito usuario: solo MARKET
 
         activation_type = str(setup.get("activation_type", "other"))
         if activation_type not in ALLOWED_ACTIVATION_TYPES:
+            _debug(f"Setup {setup_id}: activation_type inválido '{activation_type}', se fuerza other")
             activation_type = "other"
 
         trigger_tf = str(setup.get("trigger_timeframe", "m15"))
         if trigger_tf not in {"m15", "h4", "d1"}:
+            _debug(f"Setup {setup_id}: trigger_timeframe inválido '{trigger_tf}', se fuerza m15")
             trigger_tf = "m15"
 
         price_refinement = setup.get("price_refinement") or {}
@@ -280,6 +293,7 @@ def validate_and_normalize(result: Dict[str, Any], symbol: str) -> Dict[str, Any
         )
 
     normalized.sort(key=lambda x: x["priority"])
+    _debug(f"Normalización completada: setups={len(normalized)}")
     result["order_setups"] = normalized
     return result
 
@@ -395,15 +409,23 @@ def store_analysis(db_path: str, payload: Dict[str, Any], result: Dict[str, Any]
 
 def _should_activate(action: str, activation_type: str, entry: float, current_close: float) -> bool:
     if action == "NO_TRADE":
+        _debug("_should_activate: action=NO_TRADE -> False")
         return False
     if activation_type == "immediate":
+        _debug("_should_activate: activation_type=immediate -> True")
         return True
     if current_close <= 0:
+        _debug(f"_should_activate: current_close inválido ({current_close}) -> False")
         return False
     if action == "MARKET_BUY":
-        return current_close >= entry if entry > 0 else False
+        ok = current_close >= entry if entry > 0 else False
+        _debug(f"_should_activate BUY: current_close={current_close} entry={entry} -> {ok}")
+        return ok
     if action == "MARKET_SELL":
-        return current_close <= entry if entry > 0 else False
+        ok = current_close <= entry if entry > 0 else False
+        _debug(f"_should_activate SELL: current_close={current_close} entry={entry} -> {ok}")
+        return ok
+    _debug(f"_should_activate: action no contemplada ({action}) -> False")
     return False
 
 
@@ -630,9 +652,11 @@ def run_cycle(
 ) -> Tuple[Dict[str, Any], int]:
     _debug(f"Iniciando ciclo input={input_path}, db={db_path}, model={model}")
     payload = _load_json(input_path)
+    _debug(f"Payload cargado. symbol={payload.get('symbol')} timeframes={list((payload.get('timeframes') or {}).keys())}")
     result = generate_signal(payload, model)
     store_analysis(db_path, payload, result, model)
     executed = evaluate_and_execute_setups(db_path, payload, mt5_config=mt5_config)
+    _debug(f"Ciclo finalizado. analysis_id={result.get('analysis_id')} executed_market_orders={executed}")
 
     if output:
         with open(output, "w", encoding="utf-8") as f:
@@ -645,7 +669,7 @@ def main() -> None:
     _load_dotenv_if_available()
 
     parser = argparse.ArgumentParser(description="SMC engine: IA cada 15m + revisión cada 1m + SQLite + market-only")
-    parser.add_argument("--input", required=True, help="JSON de mercado actualizado por MT")
+    parser.add_argument("--input", default=os.getenv("INPUT_JSON_PATH"), help="JSON de mercado actualizado por MT")
     parser.add_argument("--db", default=os.getenv("SIGNALS_DB_PATH", "signals.db"), help="Ruta SQLite")
     parser.add_argument("--model", default="gpt-5-mini", help="Modelo OpenAI")
     parser.add_argument("--output", help="Salida JSON de análisis")
@@ -666,10 +690,10 @@ def main() -> None:
     _debug("Modo DEBUG activado")
     mt5_config = _build_mt5_config(args)
 
-    init_db(args.db)
+    init_db(db_path)
 
     if args.once:
-        result, executed = run_cycle(args.input, args.db, args.model, mt5_config=mt5_config, output=args.output)
+        result, executed = run_cycle(input_path, db_path, args.model, mt5_config=mt5_config, output=output_path)
         print(json.dumps({"mode": "once", "analysis_id": result.get("analysis_id"), "executed_market_orders": executed}, ensure_ascii=False))
         return
 
@@ -679,15 +703,16 @@ def main() -> None:
     last_analysis_ts = 0.0
     while True:
         now_ts = time.time()
-        payload = _load_json(args.input)
+        payload = _load_json(input_path)
+        _debug(f"Loop continuo: now_ts={now_ts}, last_analysis_ts={last_analysis_ts}")
 
         # 1) Análisis IA cada N minutos (default 15)
         if now_ts - last_analysis_ts >= analysis_sec:
             result = generate_signal(payload, args.model)
-            store_analysis(args.db, payload, result, args.model)
+            store_analysis(db_path, payload, result, args.model)
             last_analysis_ts = now_ts
-            if args.output:
-                with open(args.output, "w", encoding="utf-8") as f:
+            if output_path:
+                with open(output_path, "w", encoding="utf-8") as f:
                     f.write(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
             print(json.dumps({
                 "at": _utc_now(),
@@ -696,14 +721,16 @@ def main() -> None:
                 "symbol": result.get("symbol"),
                 "setups": len(result.get("order_setups", [])),
             }, ensure_ascii=False))
+            _debug(f"Evento analysis emitido. analysis_id={result.get('analysis_id')}")
 
         # 2) Revisión/ejecución cada 1 minuto (o valor configurable)
-        executed = evaluate_and_execute_setups(args.db, payload, mt5_config=mt5_config)
+        executed = evaluate_and_execute_setups(db_path, payload, mt5_config=mt5_config)
         print(json.dumps({
             "at": _utc_now(),
             "event": "review",
             "executed_market_orders": executed,
         }, ensure_ascii=False))
+        _debug(f"Evento review emitido. executed_market_orders={executed}. sleep={review_sec}s")
 
         time.sleep(review_sec)
 
